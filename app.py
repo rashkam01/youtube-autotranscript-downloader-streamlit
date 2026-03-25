@@ -19,13 +19,13 @@ def get_transcript(video_id):
 
     try:
         # Try fetching the Gujarati transcript
-        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=["gu"])
+        transcript = YouTubeTranscriptApi().get_transcript(video_id, languages=["gu"])
         return "\n".join([entry['text'] for entry in transcript])  # Return Gujarati transcript directly
     
     except NoTranscriptFound:
         # If Gujarati is not available, try fetching Hindi transcript
         try:
-            transcript_hi = YouTubeTranscriptApi.get_transcript(video_id, languages=["hi"])
+            transcript_hi = YouTubeTranscriptApi().get_transcript(video_id, languages=["hi"])
             hindi_text = "\n".join([entry['text'] for entry in transcript_hi])  # Get Hindi text
             
             # Translate Hindi to Gujarati
