@@ -1,5 +1,6 @@
 import streamlit as st
 from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
+from youtube_transcript_api._errors import RequestBlocked, IpBlocked
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -7,9 +8,17 @@ from reportlab.lib.units import cm
 from reportlab.lib import colors
 import re
 import io
-
+import time
 
 # ── helpers ────────────────────────────────────────────────────────────────────
+
+import os
+
+if "STREAMLIT_SERVER_HEADLESS" in os.environ:
+    st.warning(
+        "⚠️ Running on cloud environment — YouTube may block transcript requests.\n"
+        "Contact Rashmi Kamath for assistance."
+    )
 
 def extract_video_id(url: str) -> str | None:
     """Parse YouTube video ID from various URL formats."""
@@ -79,6 +88,36 @@ def fetch_gujarati_transcript(video_id: str):
 
     return segments, lang_code
 
+
+
+def safe_fetch_transcript(video_id: str, retries=2):
+    """
+    Wrapper around fetch_gujarati_transcript:
+    - Retries on temporary failures
+    - Does NOT replace the core logic
+    """
+    last_error = None
+
+    for attempt in range(retries + 1):
+        try:
+            return fetch_gujarati_transcript(video_id)
+
+        except Exception as e:
+            last_error = e
+
+            # Only retry for likely transient issues
+            error_msg = str(e).lower()
+
+            if "blocking requests" in error_msg or "429" in error_msg:
+                if attempt < retries:
+                    time.sleep(2)
+                    continue
+
+            # If it's not a retry-worthy error, raise immediately
+            raise e
+
+    # If all retries fail
+    raise last_error
 
 def ends_sentence(text: str) -> bool:
     """
@@ -257,7 +296,7 @@ if submitted:
 
     with st.spinner("Fetching transcript from YouTube…"):
         try:
-            segments, lang_code = fetch_gujarati_transcript(video_id)
+            segments, lang_code = safe_fetch_transcript(video_id)
         except TranscriptsDisabled:
             st.error("❌ Transcripts are disabled for this video.")
             st.stop()
@@ -270,6 +309,38 @@ if submitted:
             st.stop()
         except Exception as e:
             st.error(f"❌ Unexpected error: {e}")
+            st.stop()
+        except TranscriptsDisabled:
+            st.error("❌ Transcripts are disabled for this video.")
+            st.stop()
+
+        except NoTranscriptFound:
+            st.error(
+                "❌ Gujarati auto-transcript unavailable for this video."
+            )
+            st.stop()
+
+        except (RequestBlocked, IpBlocked):
+            st.error(
+                "🚫 YouTube is blocking requests from this app's IP.\n\n"
+                "This usually happens on cloud platforms (Streamlit Cloud, AWS, etc.).\n\n"
+                "👉 Try running this app locally on your machine."
+            )
+            st.stop()
+
+        except Exception as e:
+            error_msg = str(e)
+
+            if "blocking requests" in error_msg.lower():
+                st.error(
+                    "🚫 YouTube blocked this request (likely IP restriction).\n\n"
+                    "💡 Fix:\n"
+                    "- Run locally instead of cloud\n"
+                    "- Or use a proxy (advanced)\n"
+                )
+            else:
+                st.error(f"❌ Unexpected error: {e}")
+
             st.stop()
 
     st.success(f"✅ Gujarati transcript found (language code: `{lang_code}`). "
