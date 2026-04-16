@@ -176,84 +176,37 @@ def group_segments(segments, interval_seconds: int = 900):
     return groups
 
 
-def build_pdf(groups, video_id: str, video_url: str, lang_code: str,
+def build_txt(groups, video_id: str, video_url: str, lang_code: str,
               interval_minutes: int) -> bytes:
-    """Render transcript groups to a PDF and return bytes."""
-    buf = io.BytesIO()
+    """Render transcript groups to a TXT file and return bytes."""
 
-    doc = SimpleDocTemplate(
-        buf,
-        pagesize=A4,
-        leftMargin=2.5 * cm,
-        rightMargin=2.5 * cm,
-        topMargin=2.5 * cm,
-        bottomMargin=2.5 * cm,
-    )
+    lines = []
 
-    styles = getSampleStyleSheet()
+    # Header
+    lines.append("YouTube Gujarati Transcript")
+    lines.append("=" * 40)
+    lines.append(f"Video ID: {video_id}")
+    lines.append(f"URL: {video_url}")
+    lines.append(f"Language code: {lang_code}")
+    lines.append(f"Sections approx every {interval_minutes} minutes")
+    lines.append("")
 
-    # ── custom styles ──────────────────────────────────────────────────────────
-    title_style = ParagraphStyle(
-        "CustomTitle",
-        parent=styles["Title"],
-        fontSize=18,
-        leading=22,
-        spaceAfter=6,
-    )
-    meta_style = ParagraphStyle(
-        "Meta",
-        parent=styles["Normal"],
-        fontSize=9,
-        textColor=colors.HexColor("#555555"),
-        spaceAfter=4,
-    )
-    timestamp_style = ParagraphStyle(
-        "Timestamp",
-        parent=styles["Heading2"],
-        fontSize=11,
-        textColor=colors.HexColor("#1a56db"),
-        spaceBefore=14,
-        spaceAfter=4,
-        leading=14,
-    )
-    body_style = ParagraphStyle(
-        "Body",
-        parent=styles["Normal"],
-        fontSize=10,
-        leading=15,
-        spaceAfter=4,
-        fontName="Helvetica",
-    )
-
-    story = []
-
-    # ── title block ────────────────────────────────────────────────────────────
-    story.append(Paragraph("YouTube Gujarati Transcript", title_style))
-    story.append(Paragraph(f"Video ID: {video_id}", meta_style))
-    story.append(Paragraph(f"URL: {video_url}", meta_style))
-    story.append(Paragraph(f"Language code: {lang_code}", meta_style))
-    story.append(Paragraph(
-        f"Sections approx. every {interval_minutes} minute(s) — split at sentence boundaries", meta_style))
-    story.append(Spacer(1, 0.3 * cm))
-    story.append(HRFlowable(width="100%", thickness=1,
-                             color=colors.HexColor("#cccccc")))
-    story.append(Spacer(1, 0.3 * cm))
-
-    # ── transcript groups ──────────────────────────────────────────────────────
+    # Content
     for g in groups:
         ts = seconds_to_hms(g["start"])
-        story.append(Paragraph(f"[{ts}]", timestamp_style))
+        lines.append(f"[{ts}]")
 
-        # Merge all segment texts in the group into one paragraph
         text = " ".join(
             seg.get("text", "").replace("\n", " ").strip()
             for seg in g["segments"]
         )
-        story.append(Paragraph(text, body_style))
-        story.append(Spacer(1, 0.2 * cm))
 
-    doc.build(story)
-    return buf.getvalue()
+        lines.append(text)
+        lines.append("")  # blank line between sections
+
+    # Convert to bytes
+    full_text = "\n".join(lines)
+    return full_text.encode("utf-8")
 
 
 # ── Streamlit UI ───────────────────────────────────────────────────────────────
@@ -364,7 +317,7 @@ if submitted:
 
     # Build PDF
     with st.spinner("Generating PDF…"):
-        pdf_bytes = build_pdf(
+        txt_bytes = build_txt(
             groups,
             video_id=video_id,
             video_url=url_input,
@@ -373,8 +326,8 @@ if submitted:
         )
 
     st.download_button(
-        label="⬇️ Download Gujarati Transcript PDF",
-        data=pdf_bytes,
-        file_name=f"transcript_{video_id}.pdf",
-        mime="application/pdf",
+        label="⬇️ Download Gujarati Transcript TXT",
+        data=txt_bytes,
+        file_name=f"transcript_{video_id}.txt",
+        mime="text/pdf",
     )
