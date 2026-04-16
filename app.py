@@ -1,15 +1,12 @@
 import streamlit as st
 from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.lib import colors
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
 import re
 import io
-import os
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
@@ -43,22 +40,44 @@ def seconds_to_hms(seconds: float) -> str:
 
 def fetch_gujarati_transcript(video_id: str):
     """
-    Returns (list_of_segments, language_code) or raises a descriptive exception.
-    Prefers gu (Gujarati); falls back to auto-generated Gujarati (gu-orig / gu).
+    Returns (list_of_segment_dicts, language_code) or raises a descriptive exception.
+    Compatible with youtube-transcript-api v1.x (instance-based API).
+    Prefers manually created Gujarati; falls back to auto-generated.
+    Normalises FetchedTranscriptSnippet objects → plain dicts for the rest of the app.
     """
-    transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+    api = YouTubeTranscriptApi()
+    transcript_list = api.list(video_id)
 
+    chosen = None
     # Try manually created Gujarati first, then auto-generated
-    for generated in (False, True):
+    for want_generated in (False, True):
         for t in transcript_list:
-            if t.language_code.startswith("gu") and t.is_generated == generated:
-                return t.fetch(), t.language_code
+            if t.language_code.startswith("gu") and t.is_generated == want_generated:
+                chosen = t
+                break
+        if chosen:
+            break
 
-    raise NoTranscriptFound(
-        video_id,
-        ["gu"],
-        transcript_list._manually_created_transcripts | transcript_list._generated_transcripts,
-    )
+    if chosen is None:
+        raise NoTranscriptFound(video_id, ["gu"], transcript_list)
+
+    fetched = chosen.fetch()
+    lang_code = chosen.language_code
+
+    # Normalise: v1.x returns FetchedTranscript whose snippets may be objects or dicts
+    segments = []
+    for item in fetched:
+        if isinstance(item, dict):
+            segments.append(item)
+        else:
+            # FetchedTranscriptSnippet object
+            segments.append({
+                "text":     item.text,
+                "start":    item.start,
+                "duration": item.duration,
+            })
+
+    return segments, lang_code
 
 
 def ends_sentence(text: str) -> bool:
